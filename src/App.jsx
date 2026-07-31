@@ -157,6 +157,7 @@ const defaultClient = {
   tipoActividad: "servicios",
   componentes: { impositivo: true, jubilacion: true, obraSocial: true, ingresosBrutos: true },
   cantidadAdherentes: 0,
+  adicionalObraSocial: 0,
   montoRealAbonado: null,
   alquilerAnual: 0,
   superficieM2: 0,
@@ -184,7 +185,6 @@ const App = () => {
 
   const [clientsDB, setClientsDB] = useState([]);
   const [isLoadingDB, setIsLoadingDB] = useState(true);
-  const [configDoc, setConfigDoc] = useState({ costoAdherente: 15000 });
 
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isClientView, setIsClientView] = useState(false);
@@ -249,15 +249,6 @@ const App = () => {
       setClientsDB(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setIsLoadingDB(false);
     }, () => setIsLoadingDB(false));
-    return () => unsub();
-  }, [currentUser]);
-
-  // --- config general (costo por adherente) ---
-  useEffect(() => {
-    if (!currentUser) return;
-    const unsub = onSnapshot(doc(db, 'config', 'parametros'), (snap) => {
-      if (snap.exists()) setConfigDoc(snap.data());
-    });
     return () => unsub();
   }, [currentUser]);
 
@@ -404,10 +395,6 @@ const App = () => {
     }
   };
 
-  const handleSaveCostoAdherente = async (valor) => {
-    await setDoc(doc(db, 'config', 'parametros'), { costoAdherente: Number(valor) || 0 }, { merge: true });
-  };
-
   // --- CÁLCULOS ---
   const claves12Meses = ultimosNMeses(12);
   const claves6Meses = ultimosNMeses(6);
@@ -438,8 +425,8 @@ const App = () => {
     if (comp.jubilacion) items.push({ label: "Aporte jubilatorio (SIPA)", value: catActualData.sipa });
     if (comp.obraSocial) {
       items.push({ label: "Obra social", value: catActualData.obraSocial });
-      const adh = Number(cliente.cantidadAdherentes || 0);
-      if (adh > 0) items.push({ label: `Obra social — ${adh} adherente(s)/hijos`, value: adh * Number(configDoc.costoAdherente || 0) });
+      const adicional = Number(cliente.adicionalObraSocial || 0);
+      if (adicional > 0) items.push({ label: "Obra social — adherentes/hijos", value: adicional });
     }
     if (comp.ingresosBrutos) items.push({ label: "Ingresos Brutos Mendoza (ATM)", value: catActualData.iibbMendoza });
     return { items, total: items.reduce((a, b) => a + b.value, 0) };
@@ -744,9 +731,8 @@ const App = () => {
                   ))}
                   {cliente.componentes?.obraSocial && (
                     <div className="pl-6 flex items-center gap-2">
-                      <span className="text-xs text-slate-500">Adherentes/hijos:</span>
-                      <input type="number" min="0" value={cliente.cantidadAdherentes} onChange={(e) => setCliente({ ...cliente, cantidadAdherentes: Number(e.target.value) })} className="w-16 bg-white border border-slate-300 rounded px-2 py-1 text-xs text-center" />
-                      <span className="text-[10px] text-slate-400">× ${configDoc.costoAdherente?.toLocaleString('es-AR')}/u.</span>
+                      <span className="text-xs text-slate-500">Monto adicional por adherentes/hijos:</span>
+                      <input type="number" min="0" value={cliente.adicionalObraSocial || ''} onChange={(e) => setCliente({ ...cliente, adicionalObraSocial: Number(e.target.value) || 0 })} placeholder="$" className="w-28 bg-white border border-slate-300 rounded px-2 py-1 text-xs" />
                     </div>
                   )}
                 </div>
@@ -777,11 +763,6 @@ const App = () => {
                     </div>
                   )}
                   <p className="text-[10px] text-slate-400 mt-2">Próxima ventana: {proxVentana.mes} {proxVentana.anio}.</p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Costo mensual por adherente (general, aplica a todos los clientes)</label>
-                  <input type="number" defaultValue={configDoc.costoAdherente} onBlur={(e) => handleSaveCostoAdherente(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs" />
                 </div>
               </div>
             </div>
