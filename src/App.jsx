@@ -92,6 +92,37 @@ function determinarCategoria(ingresosAnual, superficie, energia, alquiler) {
   return { idx: Math.min(maxIdx, CATEGORIAS.length - 1), letra: excluida ? 'EXCLUIDO' : CATEGORIAS[maxIdx].letra, excluida, determinante };
 }
 
+/* =========================================================
+   RECATEGORIZACIÓN — ventanas de enero y julio.
+   Nota: la fecha límite exacta puede variar según lo que publique
+   ARCA cada semestre; por eso queda como dato editable por el
+   administrador (vencimientoRecategorizacion), no hardcodeada.
+   ========================================================= */
+function periodoActual() {
+  const d = new Date();
+  const m = d.getMonth() + 1, y = d.getFullYear();
+  return m >= 7 ? `${y}-jul` : `${y}-ene`;
+}
+function inicioSemestreEvaluado(periodo) {
+  const [yearStr, tipo] = periodo.split('-');
+  const year = parseInt(yearStr, 10);
+  return tipo === 'jul' ? new Date(year, 0, 1) : new Date(year - 1, 6, 1);
+}
+function corresponderRecategorizar(fechaAltaStr, periodo) {
+  if (!fechaAltaStr) return true; // sin fecha de alta cargada, se asume que sí corresponde (más seguro)
+  const alta = new Date(fechaAltaStr + 'T00:00:00');
+  return alta <= inicioSemestreEvaluado(periodo);
+}
+function proximaVentanaRecategorizacion() {
+  const d = new Date();
+  const m = d.getMonth() + 1, y = d.getFullYear();
+  return m < 7 ? { mes: 'julio', anio: y } : { mes: 'enero', anio: y + 1 };
+}
+function labelPeriodo(periodo) {
+  const [year, tipo] = periodo.split('-');
+  return `${tipo === 'jul' ? 'julio' : 'enero'} ${year}`;
+}
+
 const getInitialMonths = () => {
   const months = [];
   const today = new Date();
@@ -115,6 +146,9 @@ const defaultClient = {
   alquilerAnual: 0,
   superficieM2: 0,
   energiaKwh: 0,
+  fechaAlta: '',
+  proximoVencimiento: '',
+  recategorizaciones: {},
   periodos: getInitialMonths(),
 };
 
@@ -407,9 +441,22 @@ const App = () => {
   if (cliente.categoriaObjetivo && cliente.categoriaObjetivo !== cliente.categoriaActual) {
     alertas.push({ nivel: 'info', texto: `Hay una categoría proyectada distinta a la actual (${cliente.categoriaActual} → ${cliente.categoriaObjetivo}) — confirmar si sigue vigente.` });
   }
+  // --- RECATEGORIZACIÓN ---
+  const periodoRecat = periodoActual();
+  const correspondeRecat = corresponderRecategorizar(cliente.fechaAlta, periodoRecat);
+  const confirmadaRecat = !!(cliente.recategorizaciones && cliente.recategorizaciones[periodoRecat]);
+  const proxVentana = proximaVentanaRecategorizacion();
+  const excl = CATEGORIAS[CATEGORIAS.length - 1];
+  const margenExclusion = Math.max(0, excl.ingresos - facturacionAcumulada);
+
   const mesActual = new Date().getMonth() + 1;
-  if (mesActual === 1 || mesActual === 7) {
-    alertas.push({ nivel: 'info', texto: 'Este es un mes de recategorización general (enero/julio) — revisar antes del día 5 del mes siguiente.' });
+  const enVentanaRecat = mesActual === 1 || mesActual === 7;
+  if (enVentanaRecat && correspondeRecat && !confirmadaRecat) {
+    alertas.push({ nivel: 'alta', texto: `La recategorización de ${labelPeriodo(periodoRecat)} todavía no fue confirmada por el estudio.` });
+  } else if (enVentanaRecat && correspondeRecat && confirmadaRecat) {
+    alertas.push({ nivel: 'info', texto: `Recategorización de ${labelPeriodo(periodoRecat)}: confirmada por el estudio.` });
+  } else if (enVentanaRecat && !correspondeRecat) {
+    alertas.push({ nivel: 'info', texto: `No corresponde recategorización en ${labelPeriodo(periodoRecat)} — el monotributo es posterior al inicio del semestre evaluado.` });
   }
 
   const handleAmountChange = (id, val) => setPeriodos(periodos.map((p) => (p.id === id ? { ...p, amount: val } : p)));
@@ -687,6 +734,29 @@ const App = () => {
                   <input type="number" value={cliente.montoRealAbonado ?? ''} onChange={(e) => setCliente({ ...cliente, montoRealAbonado: e.target.value === '' ? null : Number(e.target.value) })} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm" placeholder="Opcional, para contrastar" />
                 </div>
 
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Fecha de alta del monotributo</label><input type="date" value={cliente.fechaAlta || ''} onChange={(e) => setCliente({ ...cliente, fechaAlta: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs" /></div>
+                  <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Próximo vencimiento de pago</label><input type="date" value={cliente.proximoVencimiento || ''} onChange={(e) => setCliente({ ...cliente, proximoVencimiento: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs" /></div>
+                </div>
+
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Recategorización — {labelPeriodo(periodoRecat)}</h4>
+                  {!correspondeRecat ? (
+                    <p className="text-xs text-slate-500">No corresponde: el alta es posterior al inicio del semestre evaluado.</p>
+                  ) : confirmadaRecat ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-600 flex items-center gap-1"><CheckCircle size={14} /> Confirmada</span>
+                      <button onClick={() => setCliente({ ...cliente, recategorizaciones: { ...cliente.recategorizaciones, [periodoRecat]: false } })} className="text-[11px] text-slate-400 underline">Deshacer</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-600 flex items-center gap-1"><AlertTriangle size={14} /> Pendiente</span>
+                      <button onClick={() => setCliente({ ...cliente, recategorizaciones: { ...cliente.recategorizaciones, [periodoRecat]: true } })} className="text-[11px] font-bold text-white bg-[#0f172a] px-2 py-1 rounded">Marcar como realizada</button>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-2">Próxima ventana: {proxVentana.mes} {proxVentana.anio}.</p>
+                </div>
+
                 <div className="pt-2 border-t border-slate-100">
                   <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Costo mensual por adherente (general, aplica a todos los clientes)</label>
                   <input type="number" defaultValue={configDoc.costoAdherente} onBlur={(e) => handleSaveCostoAdherente(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs" />
@@ -737,6 +807,16 @@ const App = () => {
                     <div className="flex items-center gap-2"><span className="bg-[#C5A059] text-[#0f172a] text-[10px] font-bold px-2 py-0.5 rounded">2026</span><p className="text-slate-400 font-medium text-sm">Planificación Fiscal Estratégica</p></div>
                   </div>
                   <div className="relative z-10 w-20 h-20 bg-white rounded-full p-1 shadow-2xl border-4 border-[#C5A059] flex items-center justify-center overflow-hidden"><BrandLogo className="w-full h-full rounded-full" size="large" /></div>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mt-4 pt-3 border-t border-white/10 text-[11px] text-slate-300">
+                  <span>Informe generado el {new Date().toLocaleDateString('es-AR')}</span>
+                  {cliente.proximoVencimiento && <span>Próximo vencimiento: <b className="text-white">{new Date(cliente.proximoVencimiento + 'T00:00:00').toLocaleDateString('es-AR')}</b></span>}
+                  <span>Monto a pagar: <b className="text-white">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(cliente.montoRealAbonado ?? desglose.total)}</b></span>
+                  {correspondeRecat && (
+                    <span className={`font-bold ${confirmadaRecat ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      Recategorización {labelPeriodo(periodoRecat)}: {confirmadaRecat ? 'Realizada' : 'Pendiente'}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="absolute top-0 right-0 w-96 h-96 bg-[#C5A059] opacity-10 rounded-full blur-3xl -mr-20 -mt-20"></div>
@@ -817,6 +897,37 @@ const App = () => {
                   <span className="text-xs font-semibold flex items-center gap-2"><TrendingUp size={14} className="opacity-80" /> Para mantener la categoría, en los próximos 6 meses debería facturar hasta</span>
                   <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(proximos6MesesMax)}/mes</span>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-slate-50 rounded-xl border border-slate-100 p-3"><p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Tope del régimen (Cat. K)</p><p className="text-sm font-bold text-slate-800">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(excl.ingresos)}</p></div>
+                <div className="bg-slate-50 rounded-xl border border-slate-100 p-3"><p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Facturación acumulada (12 meses)</p><p className="text-sm font-bold text-slate-800">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(facturacionAcumulada)}</p></div>
+                <div className={`rounded-xl border p-3 ${margenExclusion < excl.ingresos * 0.1 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}><p className={`text-[9px] font-bold uppercase mb-1 ${margenExclusion < excl.ingresos * 0.1 ? 'text-red-600' : 'text-emerald-600'}`}>Margen antes de excluirse</p><p className={`text-sm font-bold ${margenExclusion < excl.ingresos * 0.1 ? 'text-red-700' : 'text-emerald-700'}`}>$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(margenExclusion)}</p></div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-slate-50 rounded-xl border border-slate-100 p-3"><p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Promedio mensual real</p><p className="text-sm font-bold text-slate-800">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(promedioMensualReal)}</p></div>
+                <div className="bg-slate-50 rounded-xl border border-slate-100 p-3"><p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Límite mensual objetivo</p><p className="text-sm font-bold text-[#C5A059]">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(promedioMensualLimiteObjetivo)}</p></div>
+                <div className="bg-slate-50 rounded-xl border border-slate-100 p-3"><p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Disponible mensual</p><p className={`text-sm font-bold ${promedioMensualDisponible < 0 ? 'text-red-700' : 'text-emerald-700'}`}>$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.abs(promedioMensualDisponible))}</p></div>
+              </div>
+
+              <div className="bg-[#0f172a] rounded-xl p-4 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-300 uppercase flex items-center gap-2"><CreditCard size={14} className="text-[#C5A059]" /> Cuota mensual — Categoría {cliente.categoriaActual}</span>
+                <span className="text-xl font-black text-white">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(desglose.total)}</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Alquileres', pct: pctAlquiler, Icon: Home },
+                  { label: 'Energía', pct: pctEnergia, Icon: Zap },
+                  { label: 'Superficie', pct: pctSuperficie, Icon: Layout },
+                ].map(({ label, pct, Icon }) => (
+                  <div key={label} className={`rounded-xl border p-3 text-center ${pct < 70 ? 'bg-emerald-50 border-emerald-100' : pct < 90 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'}`}>
+                    <Icon size={16} className={`mx-auto mb-1 ${pct < 70 ? 'text-emerald-600' : pct < 90 ? 'text-amber-600' : 'text-red-600'}`} />
+                    <p className="text-[10px] font-bold text-slate-500">{label}</p>
+                    <p className={`text-xs font-bold ${pct < 70 ? 'text-emerald-700' : pct < 90 ? 'text-amber-700' : 'text-red-700'}`}>{pct < 70 ? 'Normal' : pct < 90 ? 'Atención' : 'Superado'} ({Math.round(pct)}%)</p>
+                  </div>
+                ))}
               </div>
             </div>
             </div>
