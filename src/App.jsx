@@ -451,12 +451,10 @@ const App = () => {
 
   const mesActual = new Date().getMonth() + 1;
   const enVentanaRecat = mesActual === 1 || mesActual === 7;
-  if (enVentanaRecat && correspondeRecat && !confirmadaRecat) {
+  if (correspondeRecat && !confirmadaRecat) {
     alertas.push({ nivel: 'alta', texto: `La recategorización de ${labelPeriodo(periodoRecat)} todavía no fue confirmada por el estudio.` });
   } else if (enVentanaRecat && correspondeRecat && confirmadaRecat) {
     alertas.push({ nivel: 'info', texto: `Recategorización de ${labelPeriodo(periodoRecat)}: confirmada por el estudio.` });
-  } else if (enVentanaRecat && !correspondeRecat) {
-    alertas.push({ nivel: 'info', texto: `No corresponde recategorización en ${labelPeriodo(periodoRecat)} — el monotributo es posterior al inicio del semestre evaluado.` });
   }
 
   const handleAmountChange = (id, val) => setPeriodos(periodos.map((p) => (p.id === id ? { ...p, amount: val } : p)));
