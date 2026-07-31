@@ -4,7 +4,8 @@ import {
   Calendar, Sparkles, Bot, Loader, Briefcase, ShoppingBag,
   Users, CreditCard, BarChart3, Save, UserPlus, Trash2,
   Home, Eye, LayoutTemplate, LogOut, Lock, Mail, Cloud,
-  Zap, Layout, KeyRound, MessageCircle, BellRing
+  Zap, Layout, KeyRound, MessageCircle, BellRing, Target,
+  History, Gauge, SlidersHorizontal
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
@@ -57,7 +58,7 @@ const BrandLogo = ({ className, size = "normal" }) => {
    desde la categoría C. Editable a futuro: mover a Firestore si se
    quiere actualizar sin republicar el sitio.
    ========================================================= */
-const CATEGORIAS = [
+let CATEGORIAS = [
   { letra: 'A', ingresos: 12009410.45, superficie: 30, energia: 3330, alquiler: 2792886.15, impuestoServicios: 5585.77, impuestoBienes: 5585.77, sipa: 18246.86, obraSocial: 25694.55, iibbMendoza: 12176 },
   { letra: 'B', ingresos: 17595182.74, superficie: 45, energia: 5000, alquiler: 2792886.15, impuestoServicios: 10612.98, impuestoBienes: 10612.98, sipa: 20071.55, obraSocial: 25694.55, iibbMendoza: 19112 },
   { letra: 'C', ingresos: 24670494.31, superficie: 60, energia: 6700, alquiler: 3816944.41, impuestoServicios: 18246.86, impuestoBienes: 16757.32, sipa: 22078.71, obraSocial: 25694.55, iibbMendoza: 28586 },
@@ -137,6 +138,13 @@ const App = () => {
 
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isClientView, setIsClientView] = useState(false);
+  const [showTablas, setShowTablas] = useState(false);
+  const [tablasVersion, setTablasVersion] = useState(0);
+  const [vigenciaArca, setVigenciaArca] = useState('01/08/2026');
+  const [vigenciaAtm, setVigenciaAtm] = useState('01/02/2026');
+  const [catsForm, setCatsForm] = useState(null);
+  const [vigArcaForm, setVigArcaForm] = useState('');
+  const [vigAtmForm, setVigAtmForm] = useState('');
 
   const [cliente, setCliente] = useState(defaultClient);
   const [periodos, setPeriodos] = useState(defaultClient.periodos);
@@ -150,6 +158,7 @@ const App = () => {
   const [credOut, setCredOut] = useState(null);
 
   const reportRef = useRef(null);
+  const resumenRef = useRef(null);
 
   // --- 1. ESTADO DE AUTENTICACIÓN REAL ---
   useEffect(() => {
@@ -199,6 +208,35 @@ const App = () => {
     return () => unsub();
   }, [currentUser]);
 
+  // --- tabla oficial ARCA + ATM (editable por el admin, con valores por defecto si nunca se guardó) ---
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsub = onSnapshot(doc(db, 'config', 'categorias'), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        if (Array.isArray(d.cats) && d.cats.length === 11) CATEGORIAS = d.cats;
+        if (d.vigenciaArca) setVigenciaArca(d.vigenciaArca);
+        if (d.vigenciaAtm) setVigenciaAtm(d.vigenciaAtm);
+        setTablasVersion((v) => v + 1);
+      }
+    });
+    return () => unsub();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (showTablas) {
+      setCatsForm(JSON.parse(JSON.stringify(CATEGORIAS)));
+      setVigArcaForm(vigenciaArca);
+      setVigAtmForm(vigenciaAtm);
+    }
+  }, [showTablas, tablasVersion, vigenciaArca, vigenciaAtm]);
+
+  const handleGuardarTablas = async () => {
+    await setDoc(doc(db, 'config', 'categorias'), { cats: catsForm, vigenciaArca: vigArcaForm, vigenciaAtm: vigAtmForm });
+    alert("Tabla actualizada — se aplica a todos los clientes.");
+    setShowTablas(false);
+  };
+
   // --- 3. SINCRONIZAR CLIENTE SELECCIONADO ---
   useEffect(() => {
     const loadClient = async () => {
@@ -216,7 +254,7 @@ const App = () => {
         if (data) {
           setCliente({ ...defaultClient, ...data });
           setPeriodos(data.periodos || getInitialMonths());
-          setProyeccionMes(0);
+          setMontoMensualSimulado(0);
           setAiAdvice("");
         }
       } else if (clientsDB.length > 0 && !selectedClientId && currentUser?.role === 'admin') {
@@ -316,6 +354,7 @@ const App = () => {
 
   // --- CÁLCULOS ---
   const facturacionAcumulada = periodos.reduce((acc, p) => acc + Number(p.amount || 0), 0);
+  const ultimos6 = periodos.slice(-6).reduce((acc, p) => acc + Number(p.amount || 0), 0);
   const idxActual = CATEGORIAS.findIndex((c) => c.letra === cliente.categoriaActual);
   const catActualData = CATEGORIAS[idxActual] || CATEGORIAS[0];
   const catObjetivoData = CATEGORIAS.find((c) => c.letra === cliente.categoriaObjetivo) || CATEGORIAS[1];
@@ -328,6 +367,7 @@ const App = () => {
   const anualSimulado = Number(montoMensualSimulado || 0) * 12;
   const resultadoSimulador = determinarCategoria(anualSimulado, cliente.superficieM2 || 0, cliente.energiaKwh || 0, cliente.alquilerAnual || 0);
   const topeMensualCategoriaActual = catActualData.ingresos / 12;
+  const proximos6MesesMax = Math.max(0, (catActualData.ingresos - ultimos6) / 6);
 
   const desglosePago = () => {
     const comp = cliente.componentes || defaultClient.componentes;
@@ -375,10 +415,10 @@ const App = () => {
   const handleAmountChange = (id, val) => setPeriodos(periodos.map((p) => (p.id === id ? { ...p, amount: val } : p)));
 
   const handleDownloadImage = async () => {
-    if (!reportRef.current) return;
+    if (!resumenRef.current) return;
     setGenerandoImagen(true);
     try {
-      const canvas = await html2canvas(reportRef.current, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+      const canvas = await html2canvas(resumenRef.current, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
       canvas.toBlob(async (blob) => {
         setGenerandoImagen(false);
         if (!blob) return;
@@ -500,6 +540,9 @@ const App = () => {
                 <button onClick={handleDownloadImage} disabled={generandoImagen} className="flex items-center gap-2 text-xs font-bold text-emerald-400 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700 disabled:opacity-60" title="Generar imagen del reporte para enviar por WhatsApp">
                   {generandoImagen ? <Loader className="animate-spin" size={16} /> : <MessageCircle size={16} />} <span className="hidden sm:inline">Imagen p/WhatsApp</span>
                 </button>
+                <button onClick={() => setShowTablas(true)} className="flex items-center gap-2 text-xs font-bold text-[#C5A059] bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700" title="Editar la tabla oficial de ARCA e Ingresos Brutos Mendoza">
+                  <BarChart3 size={16} /> <span className="hidden sm:inline">Tablas oficiales</span>
+                </button>
                 {!isClientView && (
                   <div className="flex items-center gap-2">
                     <select value={selectedClientId || ""} onChange={(e) => { setSelectedClientId(e.target.value); setCredOut(null); }}
@@ -530,6 +573,46 @@ const App = () => {
         </div>
       )}
 
+      {showTablas ? (
+        <div className="max-w-5xl mx-auto p-4 md:p-6">
+          <button onClick={() => setShowTablas(false)} className="mb-4 text-sm font-bold text-slate-500 hover:text-slate-800">← Volver</button>
+          <div className="bg-white rounded-2xl shadow-md border border-slate-100 p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-1">Tablas oficiales</h2>
+            <p className="text-xs text-slate-500 mb-5">Ingresos, superficie, energía y alquiler son comunes a servicios y venta de cosas muebles. El impuesto integrado difiere desde la categoría C. Los cambios se aplican de inmediato a todos los clientes.</p>
+            <div className="grid grid-cols-2 gap-4 mb-5 max-w-md">
+              <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">ARCA vigente desde</label><input className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm" value={vigArcaForm} onChange={(e) => setVigArcaForm(e.target.value)} /></div>
+              <div><label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">ATM vigente desde</label><input className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm" value={vigAtmForm} onChange={(e) => setVigAtmForm(e.target.value)} /></div>
+            </div>
+            {catsForm && (
+              <div className="overflow-x-auto">
+                <table className="text-xs w-full">
+                  <thead>
+                    <tr className="text-left text-slate-400 uppercase text-[9px]">
+                      <th className="p-1">Cat.</th><th className="p-1">Ingresos brutos anual</th><th className="p-1">Superficie m²</th><th className="p-1">Energía kWh</th><th className="p-1">Alquiler anual</th><th className="p-1">Imp. Servicios</th><th className="p-1">Imp. Bienes</th><th className="p-1">SIPA</th><th className="p-1">Obra social</th><th className="p-1">ATM Mendoza</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {catsForm.map((c, i) => (
+                      <tr key={c.letra} className="border-t border-slate-100">
+                        <td className="p-1 font-bold text-slate-700">{c.letra}</td>
+                        {['ingresos', 'superficie', 'energia', 'alquiler', 'impuestoServicios', 'impuestoBienes', 'sipa', 'obraSocial', 'iibbMendoza'].map((field) => (
+                          <td key={field} className="p-1">
+                            <input type="number" value={c[field]} onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setCatsForm((prev) => prev.map((row, ri) => (ri === i ? { ...row, [field]: val } : row)));
+                            }} className="w-24 border border-slate-200 rounded px-1.5 py-1 font-mono" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <button onClick={handleGuardarTablas} className="mt-5 bg-[#0f172a] hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold">Guardar actualización</button>
+          </div>
+        </div>
+      ) : (
       <div className={`max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 ${(!isClientView && currentUser.role === 'admin') ? 'lg:grid-cols-12' : 'lg:grid-cols-1'} gap-6 mt-4`}>
 
         {(!isClientView && currentUser.role === 'admin') && (
@@ -638,6 +721,7 @@ const App = () => {
         <div className={`${(isClientView || currentUser.role === 'client') ? 'lg:col-span-12 max-w-4xl mx-auto w-full' : 'lg:col-span-8'} space-y-6`}>
           <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden relative" ref={reportRef}>
             <div className="h-1.5 w-full bg-gradient-to-r from-[#C5A059] via-[#e4c988] to-[#C5A059]"></div>
+            <div ref={resumenRef}>
             <div className="bg-[#0f172a] p-8 relative overflow-hidden">
               <div className="relative z-10 w-full">
                 <div className="mb-6 border-b border-slate-700/50 pb-4">
@@ -661,7 +745,7 @@ const App = () => {
             <div className="p-8 space-y-8 bg-gradient-to-b from-white to-slate-50">
               {alertas.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2"><BellRing size={16} className="text-[#C5A059]" /> Alertas</h4>
+                  <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-600"><BellRing size={16} /></span> Alertas</h4>
                   <div className="space-y-2">
                     {alertas.map((a, i) => (
                       <div key={i} className={`text-xs font-medium px-3 py-2 rounded-lg border-l-4 ${
@@ -676,7 +760,7 @@ const App = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-1 h-full bg-[#C5A059]"></div>
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-8 tracking-widest text-center">Trayectoria hacia Categoría {cliente.categoriaObjetivo}</h4>
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-8 tracking-widest text-center flex items-center justify-center gap-2"><Target size={13} className="text-[#C5A059]" /> Trayectoria hacia Categoría {cliente.categoriaObjetivo}</h4>
                   <div className="relative h-3 bg-slate-100 rounded-full mb-10 mx-2">
                     <div className="absolute top-0 left-0 w-full h-full rounded-full flex overflow-hidden opacity-20">
                       <div className="bg-emerald-500" style={{ width: '55%' }}></div>
@@ -696,8 +780,9 @@ const App = () => {
                     })}
                   </div>
                   <div className="flex justify-between text-[9px] font-bold uppercase mt-3 pt-2 border-t border-slate-100">
-                    <span className="text-emerald-600">Conveniente</span><span className="text-amber-600">Alto costo</span><span className="text-red-600">Análisis puntual</span>
+                    <span className="text-emerald-600">A–F · Conveniente</span><span className="text-amber-600">G–H · Alto costo</span><span className="text-red-600">I–K · Análisis puntual</span>
                   </div>
+                  <p className="text-[9px] text-slate-400 mt-1 text-center">La franja I–K es de costo muy elevado, no implica exclusión automática del régimen.</p>
                 </div>
 
                 <div className="space-y-4">
@@ -719,19 +804,71 @@ const App = () => {
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-2"><BarChart3 className="text-[#C5A059]" size={20} /><h4 className="text-sm font-bold text-slate-700 uppercase">Velocidad de facturación</h4></div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-400 font-bold uppercase mb-2">Promedio real actual</p><p className="text-xl font-bold text-slate-800">$ {new Intl.NumberFormat('es-AR').format(promedioMensualReal)}</p></div>
-                  <div className="bg-[#fffbeb] p-4 rounded-xl border border-[#fef3c7]"><p className="text-[10px] text-amber-600/70 font-bold uppercase mb-2">Límite mensual objetivo</p><p className="text-xl font-bold text-[#C5A059]">$ {new Intl.NumberFormat('es-AR').format(promedioMensualLimiteObjetivo)}</p></div>
-                  <div className={`p-4 rounded-xl border ${promedioMensualDisponible < 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}><p className={`text-[10px] font-bold uppercase mb-2 ${promedioMensualDisponible < 0 ? 'text-red-600' : 'text-emerald-600'}`}>Disponible mensual</p><p className={`text-xl font-bold ${promedioMensualDisponible < 0 ? 'text-red-700' : 'text-emerald-700'}`}>$ {new Intl.NumberFormat('es-AR').format(Math.abs(promedioMensualDisponible))}</p></div>
+              <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
+                <div className="bg-blue-700 text-white px-5 py-3.5 flex items-center justify-between gap-4">
+                  <span className="text-xs font-semibold flex items-center gap-2"><Target size={14} className="opacity-80" /> El tope de facturación para la categoría {cliente.categoriaActual} es</span>
+                  <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(catActualData.ingresos)}</span>
                 </div>
+                <div className="bg-emerald-700 text-white px-5 py-3.5 flex items-center justify-between gap-4 border-t border-white/10">
+                  <span className="text-xs font-semibold flex items-center gap-2"><History size={14} className="opacity-80" /> Su facturación acumulada en los últimos 6 meses es</span>
+                  <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(ultimos6)}</span>
+                </div>
+                <div className="bg-red-700 text-white px-5 py-3.5 flex items-center justify-between gap-4 border-t border-white/10">
+                  <span className="text-xs font-semibold flex items-center gap-2"><TrendingUp size={14} className="opacity-80" /> Para mantener la categoría, en los próximos 6 meses debería facturar hasta</span>
+                  <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(proximos6MesesMax)}/mes</span>
+                </div>
+              </div>
+            </div>
+            </div>
+
+            <div className="px-8 pb-8 space-y-8 bg-gradient-to-b from-white to-slate-50">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-2"><span className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600"><Gauge size={16} /></span><h4 className="text-sm font-bold text-slate-700 uppercase">Velocidad de facturación</h4></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><p className="text-[10px] text-slate-400 font-bold uppercase mb-2">Promedio real actual</p><p className="text-xl font-bold text-slate-800">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(promedioMensualReal)}</p></div>
+                  <div className="bg-[#fffbeb] p-4 rounded-xl border border-[#fef3c7]"><p className="text-[10px] text-amber-600/70 font-bold uppercase mb-2">Límite mensual objetivo</p><p className="text-xl font-bold text-[#C5A059]">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(promedioMensualLimiteObjetivo)}</p></div>
+                  <div className={`p-4 rounded-xl border ${promedioMensualDisponible < 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}><p className={`text-[10px] font-bold uppercase mb-2 ${promedioMensualDisponible < 0 ? 'text-red-600' : 'text-emerald-600'}`}>Disponible mensual</p><p className={`text-xl font-bold ${promedioMensualDisponible < 0 ? 'text-red-700' : 'text-emerald-700'}`}>$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(Math.abs(promedioMensualDisponible))}</p></div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-2"><span className="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center text-violet-600"><BarChart3 size={16} /></span><h4 className="text-sm font-bold text-slate-700 uppercase">Evolución de facturación — últimos 12 meses</h4></div>
+                {(() => {
+                  const chartW = 600, chartH = 170, padL = 8, padR = 8, padT = 12, padB = 22;
+                  const plotW = chartW - padL - padR, plotH = chartH - padT - padB;
+                  const maxVal = Math.max(1, ...periodos.map((p) => Number(p.amount || 0)), topeMensualCategoriaActual);
+                  const slot = plotW / periodos.length;
+                  const barW = Math.max(4, slot - 8);
+                  const refY = padT + (plotH - (topeMensualCategoriaActual / maxVal) * plotH);
+                  return (
+                    <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full h-40 mt-3">
+                      <line x1={padL} x2={chartW - padR} y1={refY} y2={refY} stroke="#0f172a" strokeDasharray="4 3" strokeWidth="1" />
+                      <text x={chartW - padR} y={refY - 4} fontSize="8" textAnchor="end" fill="#0f172a">Tope mensual cat. {cliente.categoriaActual}</text>
+                      {periodos.map((p, i) => {
+                        const val = Number(p.amount || 0);
+                        const h = (val / maxVal) * plotH;
+                        const x = padL + i * slot + (slot - barW) / 2;
+                        const y = padT + (plotH - h);
+                        const over = val > topeMensualCategoriaActual;
+                        return (
+                          <g key={p.id}>
+                            <rect x={x} y={y} width={barW} height={Math.max(h, 1)} rx="2.5" fill={over ? '#b91c1c' : '#C5A059'}>
+                              <title>{p.label}: $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(val)}</title>
+                            </rect>
+                            <text x={x + barW / 2} y={chartH - 8} fontSize="7.5" textAnchor="middle" fill="#94a3b8">{p.label.split(' ')[0]}</text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  );
+                })()}
+                <p className="text-[10px] text-slate-400 mt-1">En rojo, los meses que superaron el tope mensual equivalente de la categoría actual. Pasá el mouse sobre una barra para ver el monto exacto.</p>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                   <div className="bg-[#0f172a] px-6 py-4 flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-white uppercase flex items-center gap-2"><CreditCard size={16} className="text-[#C5A059]" /> Cuota mensual</h4>
+                    <h4 className="text-sm font-bold text-white uppercase flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[#C5A059]"><CreditCard size={14} /></span> Cuota mensual</h4>
                     <span className="bg-[#C5A059] text-[10px] font-bold px-2 py-1 rounded text-slate-900">CAT {cliente.categoriaActual}</span>
                   </div>
                   <div className="p-6 space-y-3 text-sm">
@@ -756,7 +893,7 @@ const App = () => {
                 <div className="bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-800 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-center text-white shadow-xl">
                   <div className="absolute top-0 right-0 p-4 opacity-20"><Bot className="text-indigo-400 w-32 h-32" /></div>
                   <div className="relative z-10">
-                    <h4 className="text-sm font-bold text-indigo-300 uppercase mb-4 flex items-center gap-2"><Sparkles size={16} className="text-[#C5A059]" /> NC Smart Assistant</h4>
+                    <h4 className="text-sm font-bold text-indigo-300 uppercase mb-4 flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-[#C5A059]"><Sparkles size={14} /></span> NC Smart Assistant</h4>
                     {!aiAdvice ? (
                       <>
                         <p className="text-xs text-indigo-100/80 mb-6 leading-relaxed">Análisis instantáneo, generado por IA, orientativo y sin intervención de un profesional.</p>
@@ -778,7 +915,7 @@ const App = () => {
               <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 text-white shadow-md relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-2 opacity-10"><AlertTriangle size={80} /></div>
                 <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
-                  <div className="bg-black/20 p-3 rounded-lg text-center min-w-[150px]"><h4 className="text-sm font-bold uppercase mb-1">Parámetros de</h4><h3 className="text-xl font-black uppercase leading-tight">Categoría {cliente.categoriaActual}</h3></div>
+                  <div className="bg-black/20 p-3 rounded-lg text-center min-w-[150px]"><h4 className="text-sm font-bold uppercase mb-1 flex items-center justify-center gap-1.5"><SlidersHorizontal size={13} /> Parámetros de</h4><h3 className="text-xl font-black uppercase leading-tight">Categoría {cliente.categoriaActual}</h3></div>
                   <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
                     <div className="flex flex-col items-center text-center">
                       <Home className="mb-2" size={24} /><h5 className="font-bold text-sm mb-1">Alquileres</h5>
@@ -832,16 +969,17 @@ const App = () => {
                   <p className="text-sm font-bold text-emerald-700">Se mantiene en la categoría {cliente.categoriaActual}.</p>
                 )}
                 <p className="text-xs text-slate-500 mt-1">
-                  El tope mensual equivalente de la categoría {cliente.categoriaActual} es $ {new Intl.NumberFormat('es-AR').format(topeMensualCategoriaActual)}.
+                  El tope mensual equivalente de la categoría {cliente.categoriaActual} es $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(topeMensualCategoriaActual)}.
                   {' '}{montoMensualSimulado <= topeMensualCategoriaActual
-                    ? `Todavía tiene margen de $ ${new Intl.NumberFormat('es-AR').format(topeMensualCategoriaActual - montoMensualSimulado)} por mes.`
-                    : `Se pasó por $ ${new Intl.NumberFormat('es-AR').format(montoMensualSimulado - topeMensualCategoriaActual)} por mes.`}
+                    ? `Todavía tiene margen de $ ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(topeMensualCategoriaActual - montoMensualSimulado)} por mes.`
+                    : `Se pasó por $ ${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(montoMensualSimulado - topeMensualCategoriaActual)} por mes.`}
                 </p>
               </div>
             )}
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
