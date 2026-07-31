@@ -123,15 +123,30 @@ function labelPeriodo(periodo) {
   return `${tipo === 'jul' ? 'julio' : 'enero'} ${year}`;
 }
 
-const getInitialMonths = () => {
-  const months = [];
-  const today = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
-    months.push({ id: i, label: `${d.toLocaleString('es-AR', { month: 'short' })} ${d.getFullYear()}`, amount: 0 });
-  }
-  return months.reverse();
-};
+/* =========================================================
+   HISTORIAL DE FACTURACIÓN — por mes/año, sin límite de tiempo hacia atrás.
+   Cada cliente guarda un objeto { "2025-08": 150000, "2026-01": 180000, ... }.
+   Se puede cargar cualquier mes, pasado o futuro (la proyección a futuro
+   es solo visible para el administrador).
+   ========================================================= */
+const MESES_ABR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+function claveMes(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
+function labelDeClave(clave) { const [y, m] = clave.split('-'); return `${MESES_ABR[parseInt(m, 10) - 1]} ${y}`; }
+function ultimosNMeses(n, offsetMeses = 0) {
+  const out = []; const hoy = new Date();
+  for (let i = n - 1; i >= 0; i--) out.push(claveMes(new Date(hoy.getFullYear(), hoy.getMonth() - i + offsetMeses, 1)));
+  return out;
+}
+function mesesDeAnio(anio) { return Array.from({ length: 12 }, (_, i) => `${anio}-${String(i + 1).padStart(2, '0')}`); }
+function sumaClaves(mapa, claves) { return claves.reduce((acc, k) => acc + Number((mapa && mapa[k]) || 0), 0); }
+// Migración de la versión anterior (12 casilleros fijos) a facturacionMensual, por si el cliente ya tenía datos cargados.
+function migrarPeriodosAntiguos(periodosArr) {
+  if (!Array.isArray(periodosArr)) return {};
+  const claves = ultimosNMeses(12);
+  const out = {};
+  periodosArr.forEach((p, i) => { if (claves[i]) out[claves[i]] = Number(p.amount || 0); });
+  return out;
+}
 
 const defaultClient = {
   nombre: "Nuevo Cliente",
@@ -149,7 +164,8 @@ const defaultClient = {
   fechaAlta: '',
   proximoVencimiento: '',
   recategorizaciones: {},
-  periodos: getInitialMonths(),
+  facturacionMensual: {},
+  facturacionProyectada: {},
 };
 
 function generarPassword() {
@@ -181,7 +197,9 @@ const App = () => {
   const [vigAtmForm, setVigAtmForm] = useState('');
 
   const [cliente, setCliente] = useState(defaultClient);
-  const [periodos, setPeriodos] = useState(defaultClient.periodos);
+  const [facturacionMensual, setFacturacionMensual] = useState({});
+  const [facturacionProyectada, setFacturacionProyectada] = useState({});
+  const [anioVista, setAnioVista] = useState('ultimos12');
   const [montoMensualSimulado, setMontoMensualSimulado] = useState(0);
   const [generandoImagen, setGenerandoImagen] = useState(false);
 
@@ -280,7 +298,8 @@ const App = () => {
         if (snap.exists()) {
           const data = snap.data();
           setCliente({ ...defaultClient, ...data });
-          setPeriodos(data.periodos || getInitialMonths());
+          setFacturacionMensual(data.facturacionMensual || migrarPeriodosAntiguos(data.periodos));
+          setFacturacionProyectada({});
         }
         return;
       }
@@ -288,7 +307,9 @@ const App = () => {
         const data = clientsDB.find((c) => c.id === selectedClientId);
         if (data) {
           setCliente({ ...defaultClient, ...data });
-          setPeriodos(data.periodos || getInitialMonths());
+          setFacturacionMensual(data.facturacionMensual || migrarPeriodosAntiguos(data.periodos));
+          setFacturacionProyectada(data.facturacionProyectada || {});
+          setAnioVista('ultimos12');
           setMontoMensualSimulado(0);
           setAiAdvice("");
         }
@@ -348,7 +369,7 @@ const App = () => {
     setIsSaving(true);
     try {
       const { id, ...rest } = cliente;
-      await updateDoc(doc(db, DB_COLLECTION, selectedClientId), { ...rest, periodos });
+      await updateDoc(doc(db, DB_COLLECTION, selectedClientId), { ...rest, facturacionMensual, facturacionProyectada });
       setShowSaveAlert(true);
       setTimeout(() => setShowSaveAlert(false), 2000);
     } catch (e) {
@@ -388,8 +409,14 @@ const App = () => {
   };
 
   // --- CÁLCULOS ---
-  const facturacionAcumulada = periodos.reduce((acc, p) => acc + Number(p.amount || 0), 0);
-  const ultimos6 = periodos.slice(-6).reduce((acc, p) => acc + Number(p.amount || 0), 0);
+  const claves12Meses = ultimosNMeses(12);
+  const claves6Meses = ultimosNMeses(6);
+  const facturacionAcumulada = sumaClaves(facturacionMensual, claves12Meses);
+  const ultimos6 = sumaClaves(facturacionMensual, claves6Meses);
+  const anioActualNum = new Date().getFullYear();
+  const añosConDatos = Array.from(new Set(Object.keys(facturacionMensual).map((k) => k.split('-')[0])));
+  const añosDisponibles = Array.from(new Set([...añosConDatos, ...Array.from({ length: 6 }, (_, i) => String(anioActualNum - i))])).sort((a, b) => b - a);
+  const clavesAMostrar = anioVista === 'ultimos12' ? claves12Meses : mesesDeAnio(anioVista);
   const idxActual = CATEGORIAS.findIndex((c) => c.letra === cliente.categoriaActual);
   const catActualData = CATEGORIAS[idxActual] || CATEGORIAS[0];
   const catObjetivoData = CATEGORIAS.find((c) => c.letra === cliente.categoriaObjetivo) || CATEGORIAS[1];
@@ -460,7 +487,6 @@ const App = () => {
     alertas.push({ nivel: 'info', texto: `Recategorización de ${labelPeriodo(periodoRecat)}: confirmada por el estudio.` });
   }
 
-  const handleAmountChange = (id, val) => setPeriodos(periodos.map((p) => (p.id === id ? { ...p, amount: val } : p)));
 
   const handleDownloadImage = async () => {
     if (!resumenRef.current) return;
@@ -763,23 +789,53 @@ const App = () => {
             <div className="bg-white rounded-2xl shadow-lg border border-white p-5">
               <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
                 <h3 className="text-slate-800 font-bold text-lg flex items-center gap-2"><Calendar className="text-[#C5A059]" size={20} /> Facturación</h3>
-                <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-2 py-1 rounded-full uppercase">Últimos 12 meses</span>
+                <select value={anioVista} onChange={(e) => { if (e.target.value === 'otro') { const a = window.prompt('¿Qué año querés cargar/ver?'); if (a && /^\d{4}$/.test(a.trim())) setAnioVista(a.trim()); } else setAnioVista(e.target.value); }} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 font-bold">
+                  <option value="ultimos12">Últimos 12 meses</option>
+                  {añosDisponibles.map((a) => <option key={a} value={a}>Año {a}</option>)}
+                  <option value="otro">Otro año…</option>
+                </select>
               </div>
               <div className="max-h-[350px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
-                {periodos.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase w-20">{p.label}</span>
+                {clavesAMostrar.map((clave) => (
+                  <div key={clave} className="flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase w-20">{labelDeClave(clave)}</span>
                     <div className="relative flex-1">
                       <span className="absolute left-2 top-1.5 text-slate-400 text-xs">$</span>
-                      <input type="number" value={p.amount === 0 ? '' : p.amount} onChange={(e) => handleAmountChange(p.id, e.target.value)} placeholder="0" className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-mono" />
+                      <input type="number" value={facturacionMensual[clave] || ''} onChange={(e) => setFacturacionMensual({ ...facturacionMensual, [clave]: Number(e.target.value) || 0 })} placeholder="0" className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-mono" />
                     </div>
                   </div>
                 ))}
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 text-right">
-                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Total Acumulado</p>
-                <p className="text-2xl font-black text-slate-800">$ {new Intl.NumberFormat('es-AR').format(facturacionAcumulada)}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">{anioVista === 'ultimos12' ? 'Total acumulado (12 meses)' : `Total facturado en ${anioVista}`}</p>
+                <p className="text-2xl font-black text-slate-800">$ {new Intl.NumberFormat('es-AR').format(anioVista === 'ultimos12' ? facturacionAcumulada : sumaClaves(facturacionMensual, mesesDeAnio(anioVista)))}</p>
               </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg border border-dashed border-[#C5A059]/50 p-5">
+              <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                <h3 className="text-slate-800 font-bold text-sm flex items-center gap-2"><TrendingUp className="text-[#C5A059]" size={18} /> Proyección a futuro</h3>
+                <span className="text-[9px] bg-amber-50 text-amber-600 font-bold px-2 py-1 rounded-full uppercase">Solo vos la ves</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mb-3">Simulá los próximos 6 meses para ver qué categoría le tocaría. El cliente nunca ve estos valores.</p>
+              <div className="space-y-2">
+                {ultimosNMeses(6, 1).map((clave) => (
+                  <div key={clave} className="flex items-center justify-between bg-amber-50/40 p-2 rounded-lg border border-amber-100">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase w-20">{labelDeClave(clave)}</span>
+                    <div className="relative flex-1">
+                      <span className="absolute left-2 top-1.5 text-slate-400 text-xs">$</span>
+                      <input type="number" value={facturacionProyectada[clave] || ''} onChange={(e) => setFacturacionProyectada({ ...facturacionProyectada, [clave]: Number(e.target.value) || 0 })} placeholder="0" className="w-full bg-white border border-amber-200 rounded px-2 py-1 text-right text-sm font-mono" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {(() => {
+                const acumProyectado = facturacionAcumulada + Object.values(facturacionProyectada).reduce((a, b) => a + Number(b || 0), 0);
+                const resProy = determinarCategoria(acumProyectado, cliente.superficieM2 || 0, cliente.energiaKwh || 0, cliente.alquilerAnual || 0);
+                return (
+                  <p className="text-xs text-slate-600 mt-3 pt-3 border-t border-amber-100">Con esta proyección sumada a lo ya facturado, quedaría en categoría <b>{resProy.letra}</b>.</p>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -950,30 +1006,38 @@ const App = () => {
               </div>
 
               <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-2"><span className="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center text-violet-600"><BarChart3 size={16} /></span><h4 className="text-sm font-bold text-slate-700 uppercase">Evolución de facturación — últimos 12 meses</h4></div>
+                <div className="flex items-center justify-between mb-2 border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-2"><span className="w-8 h-8 rounded-full bg-violet-50 flex items-center justify-center text-violet-600"><BarChart3 size={16} /></span><h4 className="text-sm font-bold text-slate-700 uppercase">Evolución de facturación</h4></div>
+                  <select value={anioVista} onChange={(e) => { if (e.target.value === 'otro') { const a = window.prompt('¿Qué año querés consultar?'); if (a && /^\d{4}$/.test(a.trim())) setAnioVista(a.trim()); } else setAnioVista(e.target.value); }} className="text-[11px] border border-slate-200 rounded-lg px-2 py-1 bg-slate-50 font-bold text-slate-600">
+                    <option value="ultimos12">Últimos 12 meses</option>
+                    {añosDisponibles.map((a) => <option key={a} value={a}>Año {a}</option>)}
+                    <option value="otro">Otro año…</option>
+                  </select>
+                </div>
                 {(() => {
                   const chartW = 600, chartH = 170, padL = 8, padR = 8, padT = 12, padB = 22;
                   const plotW = chartW - padL - padR, plotH = chartH - padT - padB;
-                  const maxVal = Math.max(1, ...periodos.map((p) => Number(p.amount || 0)), topeMensualCategoriaActual);
-                  const slot = plotW / periodos.length;
+                  const valores = clavesAMostrar.map((c) => Number(facturacionMensual[c] || 0));
+                  const maxVal = Math.max(1, ...valores, topeMensualCategoriaActual);
+                  const slot = plotW / clavesAMostrar.length;
                   const barW = Math.max(4, slot - 8);
                   const refY = padT + (plotH - (topeMensualCategoriaActual / maxVal) * plotH);
                   return (
                     <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full h-40 mt-3">
                       <line x1={padL} x2={chartW - padR} y1={refY} y2={refY} stroke="#0f172a" strokeDasharray="4 3" strokeWidth="1" />
                       <text x={chartW - padR} y={refY - 4} fontSize="8" textAnchor="end" fill="#0f172a">Tope mensual cat. {cliente.categoriaActual}</text>
-                      {periodos.map((p, i) => {
-                        const val = Number(p.amount || 0);
+                      {clavesAMostrar.map((clave, i) => {
+                        const val = Number(facturacionMensual[clave] || 0);
                         const h = (val / maxVal) * plotH;
                         const x = padL + i * slot + (slot - barW) / 2;
                         const y = padT + (plotH - h);
                         const over = val > topeMensualCategoriaActual;
                         return (
-                          <g key={p.id}>
+                          <g key={clave}>
                             <rect x={x} y={y} width={barW} height={Math.max(h, 1)} rx="2.5" fill={over ? '#b91c1c' : '#C5A059'}>
-                              <title>{p.label}: $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(val)}</title>
+                              <title>{labelDeClave(clave)}: $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(val)}</title>
                             </rect>
-                            <text x={x + barW / 2} y={chartH - 8} fontSize="7.5" textAnchor="middle" fill="#94a3b8">{p.label.split(' ')[0]}</text>
+                            <text x={x + barW / 2} y={chartH - 8} fontSize="7.5" textAnchor="middle" fill="#94a3b8">{labelDeClave(clave).split(' ')[0]}</text>
                           </g>
                         );
                       })}
