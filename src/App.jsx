@@ -188,6 +188,7 @@ const App = () => {
   const [aiAdvice, setAiAdvice] = useState("");
   const [isLoadingAi, setIsLoadingAi] = useState(false);
   const [showSaveAlert, setShowSaveAlert] = useState(false);
+  const [showImageAlert, setShowImageAlert] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [credOut, setCredOut] = useState(null);
 
@@ -447,6 +448,8 @@ const App = () => {
   const confirmadaRecat = !!(cliente.recategorizaciones && cliente.recategorizaciones[periodoRecat]);
   const proxVentana = proximaVentanaRecategorizacion();
   const excl = CATEGORIAS[CATEGORIAS.length - 1];
+  const mesReporteRaw = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' }).replace(' de ', ' ');
+  const mesReporte = mesReporteRaw.charAt(0).toUpperCase() + mesReporteRaw.slice(1);
   const margenExclusion = Math.max(0, excl.ingresos - facturacionAcumulada);
 
   const mesActual = new Date().getMonth() + 1;
@@ -464,22 +467,16 @@ const App = () => {
     setGenerandoImagen(true);
     try {
       const canvas = await html2canvas(resumenRef.current, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-      canvas.toBlob(async (blob) => {
+      canvas.toBlob((blob) => {
         setGenerandoImagen(false);
         if (!blob) return;
         const fileName = `monotributo-${(cliente.nombre || 'cliente').replace(/\s+/g, '-')}.png`;
-        const file = new File([blob], fileName, { type: 'image/png' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({ files: [file], title: 'Reporte Monotributo', text: `Reporte de ${cliente.nombre}` });
-            return;
-          } catch (e) { /* el usuario cerró el panel de compartir: seguimos con la descarga */ }
-        }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = fileName; a.click();
         URL.revokeObjectURL(url);
-        alert("Imagen descargada. Abrí WhatsApp y adjuntala desde la conversación con el cliente.");
+        setShowImageAlert(true);
+        setTimeout(() => setShowImageAlert(false), 3500);
       }, 'image/png');
     } catch (e) {
       setGenerandoImagen(false);
@@ -609,6 +606,7 @@ const App = () => {
       </div>
 
       {showSaveAlert && <div className="fixed top-20 right-5 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-xl z-50 flex items-center gap-2 font-bold"><CheckCircle size={16} /> Guardado</div>}
+      {showImageAlert && <div className="fixed top-20 right-5 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-xl z-50 flex items-center gap-2 font-bold"><MessageCircle size={16} /> Imagen descargada — adjuntala en WhatsApp</div>}
       {credOut && (
         <div className="fixed top-20 right-5 bg-white border border-emerald-300 shadow-xl rounded-lg p-4 z-50 max-w-xs text-xs">
           <p className="font-bold text-emerald-700 mb-1">Cliente creado</p>
@@ -799,6 +797,18 @@ const App = () => {
                     <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${cliente.tipoActividad === 'servicios' ? 'bg-blue-900 text-blue-200' : 'bg-purple-900 text-purple-200'}`}>{cliente.tipoActividad}</span>
                   </div>
                 </div>
+                <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <div className="bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 flex items-center gap-2.5">
+                    <Calendar size={20} className="text-[#C5A059]" />
+                    <span className="text-xl font-black text-white tracking-tight">{mesReporte}</span>
+                  </div>
+                  {cliente.proximoVencimiento && (
+                    <div className="bg-[#C5A059] rounded-xl px-4 py-2.5 flex items-center gap-2.5">
+                      <span className="text-[10px] font-bold text-[#0f172a] uppercase tracking-wide">Vencimiento del monotributo</span>
+                      <span className="text-xl font-black text-[#0f172a]">{new Date(cliente.proximoVencimiento + 'T00:00:00').toLocaleDateString('es-AR')}</span>
+                    </div>
+                  )}
+                </div>
                 <div className="flex justify-between items-end">
                   <div>
                     <h2 className="text-3xl font-black text-white mb-2">Informe de Situación</h2>
@@ -808,7 +818,6 @@ const App = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mt-4 pt-3 border-t border-white/10 text-[11px] text-slate-300">
                   <span>Informe generado el {new Date().toLocaleDateString('es-AR')}</span>
-                  {cliente.proximoVencimiento && <span>Próximo vencimiento: <b className="text-white">{new Date(cliente.proximoVencimiento + 'T00:00:00').toLocaleDateString('es-AR')}</b></span>}
                   <span>Monto a pagar: <b className="text-white">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(cliente.montoRealAbonado ?? desglose.total)}</b></span>
                   {correspondeRecat && (
                     <span className={`font-bold ${confirmadaRecat ? 'text-emerald-400' : 'text-amber-400'}`}>
