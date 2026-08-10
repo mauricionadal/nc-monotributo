@@ -413,7 +413,9 @@ const App = () => {
   const promedioMensualDisponible = margenObjetivo / 12;
 
   // Simulador: "¿qué pasa si factura $X por mes de ahora en más?"
-  const anualSimulado = Number(montoMensualSimulado || 0) * 12;
+  const claveMesActual = claveMes(new Date());
+  const facturacionMesActualReal = Number(facturacionMensual[claveMesActual] || 0);
+  const anualSimulado = facturacionAcumulada - facturacionMesActualReal + Number(montoMensualSimulado || 0);
   const resultadoSimulador = determinarCategoria(anualSimulado, cliente.superficieM2 || 0, cliente.energiaKwh || 0, cliente.alquilerAnual || 0);
   const topeMensualCategoriaActual = catActualData.ingresos / 12;
   const proximos6MesesMax = Math.max(0, (catActualData.ingresos - ultimos6) / 6);
@@ -835,6 +837,10 @@ const App = () => {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <div className={`rounded-xl px-4 py-2.5 flex items-center gap-2.5 border ${zonaDe(idxActual) === 'conveniente' ? 'bg-emerald-500/15 border-emerald-400/30' : zonaDe(idxActual) === 'alto-costo' ? 'bg-amber-500/15 border-amber-400/30' : 'bg-red-500/15 border-red-400/30'}`}>
+                    <span className="text-[10px] font-bold text-white/70 uppercase tracking-wide">Categoría</span>
+                    <span className={`text-xl font-black ${zonaDe(idxActual) === 'conveniente' ? 'text-emerald-300' : zonaDe(idxActual) === 'alto-costo' ? 'text-amber-300' : 'text-red-300'}`}>{cliente.categoriaActual}</span>
+                  </div>
                   <div className="bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 flex items-center gap-2.5">
                     <Calendar size={20} className="text-[#C5A059]" />
                     <span className="text-xl font-black text-white tracking-tight">{mesReporte}</span>
@@ -845,6 +851,10 @@ const App = () => {
                       <span className="text-xl font-black text-[#0f172a]">{new Date(cliente.proximoVencimiento + 'T00:00:00').toLocaleDateString('es-AR')}</span>
                     </div>
                   )}
+                  <div className="bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 flex items-center gap-2.5">
+                    <span className="text-[10px] font-bold text-white/70 uppercase tracking-wide">Monto a pagar</span>
+                    <span className="text-xl font-black text-white">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(cliente.montoRealAbonado ?? desglose.total)}</span>
+                  </div>
                 </div>
                 <div className="flex justify-between items-end">
                   <div>
@@ -855,7 +865,6 @@ const App = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mt-4 pt-3 border-t border-white/10 text-[11px] text-slate-300">
                   <span>Informe generado el {new Date().toLocaleDateString('es-AR')}</span>
-                  <span>Monto a pagar: <b className="text-white">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(cliente.montoRealAbonado ?? desglose.total)}</b></span>
                   {correspondeRecat && (
                     <span className={`font-bold ${confirmadaRecat ? 'text-emerald-400' : 'text-amber-400'}`}>
                       Recategorización {labelPeriodo(periodoRecat)}: {confirmadaRecat ? 'Realizada' : 'Pendiente'}
@@ -1105,14 +1114,14 @@ const App = () => {
           <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-100 mt-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600"><Calculator size={20} /></div>
-              <div><h3 className="font-bold text-slate-800">¿Qué pasa si factura este monto por mes?</h3><p className="text-xs text-slate-500">Simulá un monto mensual y mirá si se mantiene, sube de categoría o queda excluido</p></div>
+              <div><h3 className="font-bold text-slate-800">¿Qué pasa si factura {labelDeClave(claveMesActual)} de esta forma?</h3><p className="text-xs text-slate-500">Cargá cuánto facturaría este mes y lo combinamos con los otros 11 meses ya cargados</p></div>
             </div>
             <div className="flex flex-col md:flex-row gap-4 items-center">
               <div className="flex-1 relative w-full">
                 <span className="absolute left-3 top-3 text-slate-400 font-bold">$</span>
                 <input type="number" value={montoMensualSimulado === 0 ? '' : montoMensualSimulado} onChange={(e) => setMontoMensualSimulado(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-8 pr-4 text-slate-800 font-bold focus:ring-2 focus:ring-blue-500 outline-none" placeholder={`Ej: ${Math.round(promedioMensualReal)}`} />
               </div>
-              <span className="text-xs text-slate-400 whitespace-nowrap">× 12 meses = $ {new Intl.NumberFormat('es-AR').format(anualSimulado)}</span>
+              <span className="text-xs text-slate-400 whitespace-nowrap">+ otros 11 meses = $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(anualSimulado)} anual</span>
             </div>
 
             {montoMensualSimulado > 0 && (
