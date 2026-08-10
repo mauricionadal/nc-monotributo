@@ -130,6 +130,7 @@ function labelPeriodo(periodo) {
    es solo visible para el administrador).
    ========================================================= */
 const MESES_ABR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const MESES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 function claveMes(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
 function labelDeClave(clave) { const [y, m] = clave.split('-'); return `${MESES_ABR[parseInt(m, 10) - 1]} ${y}`; }
 function ultimosNMeses(n, offsetMeses = 0) {
@@ -397,10 +398,14 @@ const App = () => {
 
   // --- CÁLCULOS ---
   const claves12Meses = ultimosNMeses(12);
-  const claves6Meses = ultimosNMeses(6);
   const facturacionAcumulada = sumaClaves(facturacionMensual, claves12Meses);
-  const ultimos6 = sumaClaves(facturacionMensual, claves6Meses);
   const anioActualNum = new Date().getFullYear();
+  const mesActualNum = new Date().getMonth() + 1; // 1-12
+  const mesesTranscurridos = mesActualNum - 1; // enero hasta el mes anterior al actual
+  const mesesRestantes = 13 - mesActualNum; // mes actual hasta diciembre
+  const clavesTranscurridas = mesesDeAnio(anioActualNum).slice(0, mesesTranscurridos);
+  const clavesRestantes = mesesDeAnio(anioActualNum).slice(mesesTranscurridos);
+  const facturacionTranscurrida = sumaClaves(facturacionMensual, clavesTranscurridas);
   const añosConDatos = Array.from(new Set(Object.keys(facturacionMensual).map((k) => k.split('-')[0])));
   const añosDisponibles = Array.from(new Set([...añosConDatos, ...Array.from({ length: 6 }, (_, i) => String(anioActualNum - i))])).sort((a, b) => b - a);
   const clavesAMostrar = anioVista === 'ultimos12' ? claves12Meses : mesesDeAnio(anioVista);
@@ -418,7 +423,8 @@ const App = () => {
   const anualSimulado = facturacionAcumulada - facturacionMesActualReal + Number(montoMensualSimulado || 0);
   const resultadoSimulador = determinarCategoria(anualSimulado, cliente.superficieM2 || 0, cliente.energiaKwh || 0, cliente.alquilerAnual || 0);
   const topeMensualCategoriaActual = catActualData.ingresos / 12;
-  const proximos6MesesMax = Math.max(0, (catActualData.ingresos - ultimos6) / 6);
+  // Facturación máxima recomendada por mes para lo que resta del año calendario, para no recategorizarse
+  const proximosMesesMax = mesesRestantes > 0 ? Math.max(0, (catActualData.ingresos - facturacionTranscurrida) / mesesRestantes) : 0;
 
   const desglosePago = () => {
     const comp = cliente.componentes || defaultClient.componentes;
@@ -943,12 +949,18 @@ const App = () => {
                   <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(catActualData.ingresos)}</span>
                 </div>
                 <div className="bg-emerald-700 text-white px-5 py-3.5 flex items-center justify-between gap-4 border-t border-white/10">
-                  <span className="text-xs font-semibold flex items-center gap-2"><History size={14} className="opacity-80" /> Su facturación acumulada en los últimos 6 meses es</span>
-                  <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(ultimos6)}</span>
+                  <span className="text-xs font-semibold flex items-center gap-2"><History size={14} className="opacity-80" />
+                    {mesesTranscurridos > 0
+                      ? `Su facturación acumulada en los últimos ${mesesTranscurridos} meses es (desde ${MESES_LARGO[0]} hasta ${MESES_LARGO[mesesTranscurridos - 1]}/${String(anioActualNum).slice(-2)})`
+                      : `Todavía no hay meses cerrados este año (${anioActualNum})`}
+                  </span>
+                  <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(facturacionTranscurrida)}</span>
                 </div>
                 <div className="bg-red-700 text-white px-5 py-3.5 flex items-center justify-between gap-4 border-t border-white/10">
-                  <span className="text-xs font-semibold flex items-center gap-2"><TrendingUp size={14} className="opacity-80" /> Para mantener la categoría, en los próximos 6 meses debería facturar hasta</span>
-                  <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(proximos6MesesMax)}/mes</span>
+                  <span className="text-xs font-semibold flex items-center gap-2"><TrendingUp size={14} className="opacity-80" />
+                    Para mantener la categoría, en los próximos {mesesRestantes} meses (desde {MESES_LARGO[mesActualNum - 1]} hasta diciembre/{String(anioActualNum).slice(-2)}) debería facturar hasta
+                  </span>
+                  <span className="text-lg font-black whitespace-nowrap">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(proximosMesesMax)}/mes</span>
                 </div>
               </div>
 
