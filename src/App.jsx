@@ -140,6 +140,13 @@ function ultimosNMeses(n, offsetMeses = 0) {
 }
 function mesesDeAnio(anio) { return Array.from({ length: 12 }, (_, i) => `${anio}-${String(i + 1).padStart(2, '0')}`); }
 function sumaClaves(mapa, claves) { return claves.reduce((acc, k) => acc + Number((mapa && mapa[k]) || 0), 0); }
+// Califica el desfasaje entre lo acreditado en bancos/billeteras y lo facturado.
+// Lo riesgoso es que ingrese MÁS dinero del que se facturó (indicio de ingresos no declarados).
+function nivelDesfasaje(facturado, acreditado) {
+  if (acreditado <= facturado * 1.02) return 'normal';
+  if (acreditado <= facturado * 1.10) return 'leve';
+  return 'alto';
+}
 // Migración de la versión anterior (12 casilleros fijos) a facturacionMensual, por si el cliente ya tenía datos cargados.
 function migrarPeriodosAntiguos(periodosArr) {
   if (!Array.isArray(periodosArr)) return {};
@@ -168,6 +175,9 @@ const defaultClient = {
   recategorizaciones: {},
   facturacionMensual: {},
   facturacionProyectada: {},
+  acreditacionesMensual: {},
+  gastosMensual: {},
+  mesesVisiblesAcreditaciones: {},
 };
 
 function generarPassword() {
@@ -200,6 +210,9 @@ const App = () => {
   const [cliente, setCliente] = useState(defaultClient);
   const [facturacionMensual, setFacturacionMensual] = useState({});
   const [facturacionProyectada, setFacturacionProyectada] = useState({});
+  const [acreditacionesMensual, setAcreditacionesMensual] = useState({});
+  const [gastosMensual, setGastosMensual] = useState({});
+  const [mesesVisiblesAcreditaciones, setMesesVisiblesAcreditaciones] = useState({});
   const [anioVista, setAnioVista] = useState('ultimos12');
   const [montoMensualSimulado, setMontoMensualSimulado] = useState(0);
   const [generandoImagen, setGenerandoImagen] = useState(false);
@@ -292,6 +305,9 @@ const App = () => {
           setCliente({ ...defaultClient, ...data });
           setFacturacionMensual(data.facturacionMensual || migrarPeriodosAntiguos(data.periodos));
           setFacturacionProyectada({});
+          setAcreditacionesMensual(data.acreditacionesMensual || {});
+          setGastosMensual(data.gastosMensual || {});
+          setMesesVisiblesAcreditaciones(data.mesesVisiblesAcreditaciones || {});
         }
         return;
       }
@@ -301,6 +317,9 @@ const App = () => {
           setCliente({ ...defaultClient, ...data });
           setFacturacionMensual(data.facturacionMensual || migrarPeriodosAntiguos(data.periodos));
           setFacturacionProyectada(data.facturacionProyectada || {});
+          setAcreditacionesMensual(data.acreditacionesMensual || {});
+          setGastosMensual(data.gastosMensual || {});
+          setMesesVisiblesAcreditaciones(data.mesesVisiblesAcreditaciones || {});
           setAnioVista('ultimos12');
           setMontoMensualSimulado(0);
           setAiAdvice("");
@@ -361,7 +380,7 @@ const App = () => {
     setIsSaving(true);
     try {
       const { id, ...rest } = cliente;
-      await updateDoc(doc(db, DB_COLLECTION, selectedClientId), { ...rest, facturacionMensual, facturacionProyectada });
+      await updateDoc(doc(db, DB_COLLECTION, selectedClientId), { ...rest, facturacionMensual, facturacionProyectada, acreditacionesMensual, gastosMensual, mesesVisiblesAcreditaciones });
       setShowSaveAlert(true);
       setTimeout(() => setShowSaveAlert(false), 2000);
     } catch (e) {
@@ -826,6 +845,50 @@ const App = () => {
                 );
               })()}
             </div>
+
+            <div className="bg-white rounded-2xl shadow-lg border border-white p-5">
+              <div className="flex justify-between items-center mb-2 border-b border-slate-100 pb-2">
+                <h3 className="text-slate-800 font-bold text-sm flex items-center gap-2"><AlertTriangle className="text-[#C5A059]" size={18} /> Control de acreditaciones vs. facturación</h3>
+              </div>
+              <p className="text-[10px] text-slate-400 mb-3">Comparación de lo acreditado en bancos/billeteras y los gastos o facturas recibidas, contra lo facturado. Un desfasaje (acreditado por encima de lo facturado) puede derivar en una inspección, una recategorización de oficio o una exclusión — por eso conviene revisarlo antes de mostrárselo al cliente. Tildá "Visible" solo en los meses que quieras que vea.</p>
+              <div className="max-h-[380px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                {clavesAMostrar.map((clave) => {
+                  const fact = Number(facturacionMensual[clave] || 0);
+                  const acred = Number(acreditacionesMensual[clave] || 0);
+                  const nivel = nivelDesfasaje(fact, acred);
+                  return (
+                    <div key={clave} className={`p-2 rounded-lg border ${nivel === 'alto' ? 'bg-red-50 border-red-200' : nivel === 'leve' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">{labelDeClave(clave)}</span>
+                        <label className="flex items-center gap-1 text-[10px] text-slate-500">
+                          <input type="checkbox" checked={!!mesesVisiblesAcreditaciones[clave]} onChange={(e) => setMesesVisiblesAcreditaciones({ ...mesesVisiblesAcreditaciones, [clave]: e.target.checked })} className="accent-[#C5A059] w-3.5 h-3.5" />
+                          Visible para el cliente
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <div>
+                          <span className="text-[9px] text-slate-400 block">Facturado</span>
+                          <span className="text-xs font-mono text-slate-600">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(fact)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-slate-400 block">Acreditado</span>
+                          <input type="number" value={acreditacionesMensual[clave] || ''} onChange={(e) => setAcreditacionesMensual({ ...acreditacionesMensual, [clave]: Number(e.target.value) || 0 })} placeholder="0" className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono" />
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-slate-400 block">Gastos/Fact. recibidas</span>
+                          <input type="number" value={gastosMensual[clave] || ''} onChange={(e) => setGastosMensual({ ...gastosMensual, [clave]: Number(e.target.value) || 0 })} placeholder="0" className="w-full bg-white border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono" />
+                        </div>
+                      </div>
+                      {nivel !== 'normal' && (
+                        <p className={`text-[10px] font-bold mt-1.5 ${nivel === 'alto' ? 'text-red-600' : 'text-amber-600'}`}>
+                          Desfasaje {nivel === 'alto' ? 'importante' : 'leve'}: acreditado $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(acred - fact)} por encima de lo facturado.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1048,6 +1111,39 @@ const App = () => {
                 })()}
                 <p className="text-[10px] text-slate-400 mt-1">En rojo, los meses que superaron el tope mensual equivalente de la categoría actual. Pasá el mouse sobre una barra para ver el monto exacto.</p>
               </div>
+
+              {Object.keys(mesesVisiblesAcreditaciones).filter((k) => mesesVisiblesAcreditaciones[k]).length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2 border-b border-slate-100 pb-2"><span className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-600"><AlertTriangle size={16} /></span><h4 className="text-sm font-bold text-slate-700 uppercase">Control de acreditaciones vs. facturación</h4></div>
+                  <p className="text-xs text-slate-500 mb-4">Comparación entre lo acreditado en bancos/billeteras virtuales y lo facturado. Un desfasaje sostenido (que ingrese más dinero del que se factura) puede derivar en una inspección, una recategorización de oficio o una exclusión del régimen.</p>
+                  <div className="space-y-2">
+                    {Object.keys(mesesVisiblesAcreditaciones).filter((k) => mesesVisiblesAcreditaciones[k]).sort().map((clave) => {
+                      const fact = Number(facturacionMensual[clave] || 0);
+                      const acred = Number(acreditacionesMensual[clave] || 0);
+                      const gasto = Number(gastosMensual[clave] || 0);
+                      const nivel = nivelDesfasaje(fact, acred);
+                      return (
+                        <div key={clave} className={`rounded-xl border p-3 ${nivel === 'alto' ? 'bg-red-50 border-red-200' : nivel === 'leve' ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-100'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-slate-700">{labelDeClave(clave)}</span>
+                            {nivel === 'normal' ? <CheckCircle size={16} className="text-emerald-600" /> : <AlertTriangle size={16} className={nivel === 'alto' ? 'text-red-600' : 'text-amber-600'} />}
+                          </div>
+                          <div className="grid grid-cols-3 gap-3 text-center">
+                            <div><p className="text-[9px] text-slate-400 uppercase">Facturado</p><p className="text-sm font-bold text-slate-700">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(fact)}</p></div>
+                            <div><p className="text-[9px] text-slate-400 uppercase">Acreditado</p><p className="text-sm font-bold text-slate-700">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(acred)}</p></div>
+                            <div><p className="text-[9px] text-slate-400 uppercase">Gastos/Fact. recibidas</p><p className="text-sm font-bold text-slate-700">$ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(gasto)}</p></div>
+                          </div>
+                          {nivel !== 'normal' && (
+                            <p className={`text-xs font-bold mt-2 ${nivel === 'alto' ? 'text-red-700' : 'text-amber-700'}`}>
+                              Se acreditaron $ {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(acred - fact)} más de lo facturado este mes — conviene revisarlo con el estudio.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
