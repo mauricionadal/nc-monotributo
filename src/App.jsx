@@ -969,7 +969,7 @@ const App = () => {
                       <div className="bg-amber-500" style={{ width: '18%' }}></div>
                       <div className="bg-red-500" style={{ width: '27%' }}></div>
                     </div>
-                    <div className={`absolute top-0 left-0 h-full rounded-full transition-all duration-1000 ${margenObjetivo < 0 ? 'bg-red-500' : 'bg-gradient-to-r from-[#C5A059] to-amber-300'}`} style={{ width: `${Math.min((facturacionAcumulada / (catObjetivoData.ingresos || 1)) * 100, 100)}%` }}></div>
+                    <div className={`absolute top-0 left-0 h-full rounded-full transition-all duration-1000 ${margenObjetivo < 0 ? 'bg-red-500' : 'bg-gradient-to-r from-[#C5A059] to-amber-300'}`} style={{ width: `${Math.max(1.5, Math.min((facturacionAcumulada / (catObjetivoData.ingresos || 1)) * 100, 100))}%` }}></div>
                   </div>
                   <div className="flex justify-between items-center px-1 mt-2">
                     {CATEGORIAS.map((cat, idx) => {
