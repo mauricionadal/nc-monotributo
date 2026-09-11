@@ -392,9 +392,23 @@ const App = () => {
 
   const handleDeleteClient = async () => {
     if (!selectedClientId) return;
-    if (!window.confirm("¿Eliminar este cliente y su acceso permanentemente? (el usuario de Firebase Auth debe borrarse aparte, desde la consola de Firebase)")) return;
+    if (!window.confirm("¿Eliminar este cliente y su acceso permanentemente? Esta acción no se puede deshacer.")) return;
     setIsSaving(true);
     try {
+      try {
+        const idToken = await auth.currentUser.getIdToken();
+        const resp = await fetch('/api/delete-client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken, uidToDelete: selectedClientId }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          alert("Se borró la ficha del cliente, pero no se pudo borrar su acceso automáticamente (" + (data.error || 'error desconocido') + "). Si necesitás reutilizar ese email, borralo a mano desde Firebase → Authentication → Users.");
+        }
+      } catch (e) {
+        alert("Se borró la ficha del cliente, pero no se pudo borrar su acceso automáticamente. Si necesitás reutilizar ese email, borralo a mano desde Firebase → Authentication → Users.");
+      }
       await deleteDoc(doc(db, DB_COLLECTION, selectedClientId));
       const other = clientsDB.find((c) => c.id !== selectedClientId);
       setSelectedClientId(other ? other.id : null);
