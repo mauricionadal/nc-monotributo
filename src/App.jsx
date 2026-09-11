@@ -566,16 +566,16 @@ const App = () => {
 
   // --- VISTA DE LOGIN ---
   if (authChecking) {
-    return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white"><Loader className="animate-spin" /></div>;
+    return <div className="min-h-dvh bg-slate-900 flex items-center justify-center text-white"><Loader className="animate-spin" /></div>;
   }
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="min-h-dvh bg-slate-900 flex items-center justify-center relative overflow-hidden" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))', paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))' }}>
         <div className="absolute top-0 right-0 w-96 h-96 bg-[#C5A059] opacity-10 rounded-full blur-3xl -mr-20 -mt-20 animate-pulse"></div>
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-indigo-600 opacity-10 rounded-full blur-3xl -ml-20 -mb-20 animate-pulse delay-700"></div>
 
-        <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-8 relative z-10 animate-fade-in-up">
+        <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-6 sm:p-8 relative z-10 animate-fade-in-up">
           <div className="flex flex-col items-center mb-8">
             <div className="w-20 h-20 bg-white rounded-full p-1 border-4 border-[#C5A059] shadow-lg mb-4 flex items-center justify-center overflow-hidden">
               <BrandLogo className="w-full h-full rounded-full" size="large" />
@@ -606,7 +606,14 @@ const App = () => {
               {loginBusy ? <Loader className="animate-spin" size={20} /> : "Ingresar"}
             </button>
           </form>
-          <div className="mt-8 text-center"><p className="text-[10px] text-slate-400 font-medium">NC Servicios Integrales • 2026</p></div>
+          <details className="mt-6 text-center">
+            <summary className="text-xs font-bold text-[#C5A059] cursor-pointer select-none">¿Cómo instalar esta app en tu celular?</summary>
+            <div className="text-left text-[11px] text-slate-500 mt-3 bg-slate-50 rounded-lg p-3 space-y-2">
+              <p><b>Android (Chrome):</b> tocá el menú ⋮ de arriba a la derecha → "Instalar aplicación" o "Agregar a pantalla de inicio".</p>
+              <p><b>iPhone (Safari):</b> tocá el ícono de compartir (el cuadrado con la flecha hacia arriba) → "Agregar a inicio".</p>
+            </div>
+          </details>
+          <div className="mt-4 text-center"><p className="text-[10px] text-slate-400 font-medium">NC Servicios Integrales • 2026</p></div>
         </div>
       </div>
     );
@@ -614,11 +621,11 @@ const App = () => {
 
   // --- VISTA PRINCIPAL ---
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-800 pb-20">
-      <div className="bg-[#0f172a] text-white p-3 shadow-lg sticky top-0 z-50 border-b border-[#C5A059]/30">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white rounded-full p-0.5 border-2 border-[#C5A059] shadow-md overflow-hidden">
+    <div className="min-h-dvh bg-slate-100 font-sans text-slate-800 pb-20">
+      <div className="bg-[#0f172a] text-white shadow-lg sticky top-0 z-50 border-b border-[#C5A059]/30" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))', paddingLeft: 'max(0.75rem, env(safe-area-inset-left))', paddingRight: 'max(0.75rem, env(safe-area-inset-right))', paddingBottom: '0.75rem' }}>
+        <div className="max-w-7xl mx-auto flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full p-0.5 border-2 border-[#C5A059] shadow-md overflow-hidden flex-shrink-0">
               <BrandLogo className="w-full h-full rounded-full" />
             </div>
             <div className="hidden md:block">
@@ -626,43 +633,43 @@ const App = () => {
               <p className="text-[10px] text-slate-400 font-medium">Panel de {currentUser.role === 'admin' ? 'Administrador' : 'Cliente'}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 md:gap-4">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-1 min-w-0">
             {currentUser.role === 'admin' && (
               <>
-                <div className="flex items-center bg-slate-900 rounded-lg p-1 border border-slate-700">
-                  <button onClick={() => setIsClientView(false)} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 ${!isClientView ? 'bg-[#C5A059] text-slate-900' : 'text-slate-400 hover:text-white'}`}><LayoutTemplate size={14} /> Admin</button>
-                  <button onClick={() => setIsClientView(true)} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 ${isClientView ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><Eye size={14} /> Vista</button>
+                <div className="flex items-center bg-slate-900 rounded-lg p-1 border border-slate-700 flex-shrink-0">
+                  <button onClick={() => setIsClientView(false)} className={`px-2.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 whitespace-nowrap ${!isClientView ? 'bg-[#C5A059] text-slate-900' : 'text-slate-400 hover:text-white'}`}><LayoutTemplate size={14} /> <span className="hidden sm:inline">Admin</span></button>
+                  <button onClick={() => setIsClientView(true)} className={`px-2.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 whitespace-nowrap ${isClientView ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><Eye size={14} /> <span className="hidden sm:inline">Vista</span></button>
                 </div>
-                <button onClick={handleDownloadImage} disabled={generandoImagen} className="flex items-center gap-2 text-xs font-bold text-emerald-400 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700 disabled:opacity-60" title="Generar imagen del reporte para enviar por WhatsApp">
+                <button onClick={handleDownloadImage} disabled={generandoImagen} className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 bg-slate-800 hover:bg-slate-700 px-2.5 py-2 rounded-lg border border-slate-700 disabled:opacity-60 whitespace-nowrap flex-shrink-0" title="Generar imagen del reporte para enviar por WhatsApp">
                   {generandoImagen ? <Loader className="animate-spin" size={16} /> : <MessageCircle size={16} />} <span className="hidden sm:inline">Imagen p/WhatsApp</span>
                 </button>
-                <button onClick={() => setShowTablas(true)} className="flex items-center gap-2 text-xs font-bold text-[#C5A059] bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700" title="Editar la tabla oficial de ARCA e Ingresos Brutos Mendoza">
+                <button onClick={() => setShowTablas(true)} className="flex items-center gap-1.5 text-xs font-bold text-[#C5A059] bg-slate-800 hover:bg-slate-700 px-2.5 py-2 rounded-lg border border-slate-700 whitespace-nowrap flex-shrink-0" title="Editar la tabla oficial de ARCA e Ingresos Brutos Mendoza">
                   <BarChart3 size={16} /> <span className="hidden sm:inline">Tablas oficiales</span>
                 </button>
                 {!isClientView && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <select value={selectedClientId || ""} onChange={(e) => { setSelectedClientId(e.target.value); setCredOut(null); }}
-                      className="hidden sm:block bg-slate-800/80 text-sm border border-slate-600 rounded-lg px-3 py-2 w-40 focus:ring-2 focus:ring-[#C5A059] outline-none text-white font-medium">
-                      <option value="" disabled>Seleccionar cliente</option>
+                      className="bg-slate-800/80 text-sm border border-slate-600 rounded-lg px-2 py-2 w-28 sm:w-40 focus:ring-2 focus:ring-[#C5A059] outline-none text-white font-medium flex-shrink-0">
+                      <option value="" disabled>Cliente</option>
                       {clientsDB.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
-                    <button onClick={handleCreateClient} disabled={isSaving} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-[#C5A059]" title="Nuevo cliente"><UserPlus size={18} /></button>
-                    <button onClick={handleSaveCurrentClient} disabled={isSaving} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-emerald-400" title="Guardar">{isSaving ? <Loader className="animate-spin" size={18} /> : <Save size={18} />}</button>
-                    <button onClick={handleDeleteClient} disabled={isSaving} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-red-400" title="Borrar"><Trash2 size={18} /></button>
+                    <button onClick={handleCreateClient} disabled={isSaving} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-[#C5A059] flex-shrink-0" title="Nuevo cliente"><UserPlus size={18} /></button>
+                    <button onClick={handleSaveCurrentClient} disabled={isSaving} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-emerald-400 flex-shrink-0" title="Guardar">{isSaving ? <Loader className="animate-spin" size={18} /> : <Save size={18} />}</button>
+                    <button onClick={handleDeleteClient} disabled={isSaving} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-red-400 flex-shrink-0" title="Borrar"><Trash2 size={18} /></button>
                   </div>
                 )}
               </>
             )}
-            <div className="h-6 w-px bg-slate-700 mx-1"></div>
-            <button onClick={handleLogout} className="flex items-center gap-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700"><LogOut size={16} /> <span className="hidden sm:inline">Salir</span></button>
           </div>
+          <div className="h-6 w-px bg-slate-700 mx-1 flex-shrink-0"></div>
+          <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-2 rounded-lg border border-slate-700 whitespace-nowrap flex-shrink-0"><LogOut size={16} /> <span className="hidden sm:inline">Salir</span></button>
         </div>
       </div>
 
-      {showSaveAlert && <div className="fixed top-20 right-5 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-xl z-50 flex items-center gap-2 font-bold"><CheckCircle size={16} /> Guardado</div>}
-      {showImageAlert && <div className="fixed top-20 right-5 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-xl z-50 flex items-center gap-2 font-bold"><MessageCircle size={16} /> Imagen descargada — adjuntala en WhatsApp</div>}
+      {showSaveAlert && <div className="fixed right-5 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-xl z-50 flex items-center gap-2 font-bold" style={{ top: 'max(5rem, calc(env(safe-area-inset-top) + 4rem))' }}><CheckCircle size={16} /> Guardado</div>}
+      {showImageAlert && <div className="fixed right-5 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-xl z-50 flex items-center gap-2 font-bold" style={{ top: 'max(5rem, calc(env(safe-area-inset-top) + 4rem))' }}><MessageCircle size={16} /> Imagen descargada — adjuntala en WhatsApp</div>}
       {credOut && (
-        <div className="fixed top-20 right-5 bg-white border border-emerald-300 shadow-xl rounded-lg p-4 z-50 max-w-xs text-xs">
+        <div className="fixed right-5 bg-white border border-emerald-300 shadow-xl rounded-lg p-4 z-50 max-w-xs text-xs" style={{ top: 'max(5rem, calc(env(safe-area-inset-top) + 4rem))' }}>
           <p className="font-bold text-emerald-700 mb-1">Cliente creado</p>
           <p>Enviale estos datos por un canal seguro (no por acá):</p>
           <p className="mt-2 font-mono">{credOut.email}<br />{credOut.pass}</p>
